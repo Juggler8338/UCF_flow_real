@@ -1,3 +1,4 @@
+**./.zarr
 run_3seed_qz2.sh
 data/
 # python related

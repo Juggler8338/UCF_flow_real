@@ -19,7 +19,7 @@ seed=0
 exp_name=${task_name}-${alg_name}-${addition_info}
 run_dir="data/outputs/${exp_name}_seed${seed}"
 
-gpu_id=0
+gpu_id=1
 echo -e "\033[33mgpu id (to use): ${gpu_id}\033[0m"
 
 

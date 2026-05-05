@@ -1,36 +1,54 @@
 defaults:
+  - task: dexdeform_flip_pointcloud
   - _self_
-  - task: adroit_door_image
 
 name: train_diffusion_unet_hybrid
-_target_: diffusion_policy_3d.workspace.dp_workspace.DPWorkspace
+_target_: diffusion_policy_3d.workspace.idp3_workspace.iDP3Workspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
 exp_name: "debug"
 
-horizon: 16
-n_action_steps: 16
-
+# n_obs_steps: 2
+# n_obs_steps: 1
 n_obs_steps: 2
+
+# horizon: 4
+# n_action_steps: 4
+
+# horizon: 16
+# n_action_steps: 15
+
+
+horizon: 16
+n_action_steps: 15
+
 n_latency_steps: 0
 dataset_obs_steps: ${n_obs_steps}
 keypoint_visible_rate: 1.0
 obs_as_global_cond: True
 
-use_image: true
+use_image: false
+
 policy:
-  _target_: diffusion_policy_3d.policy.diffusion_image_policy.DiffusionImagePolicy
+  _target_: diffusion_policy_3d.policy.mp1.MP1
+  use_point_crop: true
+  use_down_condition: true
+  use_mid_condition: true
+  use_up_condition: true
+  use_image: false
   
-  condition_type: film
   diffusion_step_embed_dim: 128
   down_dims: [256, 512, 1024]
+  
+
   horizon: ${horizon}
   kernel_size: 5
   n_action_steps: ${n_action_steps}
   n_groups: 8
-  n_obs_steps: 2
- 
+  n_obs_steps: ${n_obs_steps}
+
+
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
     num_train_timesteps: 50
@@ -40,45 +58,26 @@ policy:
     clip_sample: True
     set_alpha_to_one: True
     steps_offset: 0
-    prediction_type: epsilon # or sample
-  num_inference_steps: 10
+    prediction_type: sample
+
+
   obs_as_global_cond: true
   shape_meta: ${shape_meta}
 
-  obs_encoder:
-    _target_: diffusion_policy_3d.model.vision.timm_obs_encoder.TimmObsEncoder
-    shape_meta: ${shape_meta}
+  use_pc_color: false
+  pointnet_type: "multi_stage_pointnet"
 
-    model_name: 'r3m'
-    pretrained: True
-    frozen: False
+  point_downsample: true
 
-    global_pool: ''
+ 
 
-    feature_aggregation: null
-    position_encording: 'sinusoidal' # 'learnable' or 'sinusoidal'. it only works for transformer
-
-    downsample_ratio: 32
-
-    transforms:
-      - type: RandomCrop
-        ratio: 0.95
-      - _target_: torchvision.transforms.RandomRotation
-        degrees:
-          - -5.0
-          - 5.0
-        expand: false
-      - _target_: torchvision.transforms.ColorJitter
-        brightness: 0.3
-        contrast: 0.4
-        saturation: 0.5
-        hue: 0.08
-     
-
-    use_group_norm: True
-    share_rgb_model: False
-    imagenet_norm: True
-
+  pointcloud_encoder_cfg:
+    in_channels: 3
+    out_channels: 128
+    use_layernorm: true
+    final_norm: layernorm # layernorm, none
+    normal_channel: false
+    num_points: 4096
 
 ema:
   _target_: diffusion_policy_3d.model.diffusion.ema_model.EMAModel
@@ -89,14 +88,16 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 32
+  # batch_size: 120
+  batch_size: 64
   num_workers: 8
   shuffle: True
   pin_memory: True
   persistent_workers: False
 
 val_dataloader:
-  batch_size: 32
+  # batch_size: 120
+  batch_size: 64
   num_workers: 8
   shuffle: False
   pin_memory: True
@@ -116,19 +117,17 @@ training:
   resume: True
   lr_scheduler: cosine
   lr_warmup_steps: 500
-  num_epochs: 301
+  num_epochs: 501
   gradient_accumulate_every: 1
   use_ema: True
-  rollout_every: 200
-  checkpoint_every: 100
-  val_every: 100
+  rollout_every: 600
+  checkpoint_every: 200
+  val_every: 1
   sample_every: 5
-  # steps per epoch
   max_train_steps: null
   max_val_steps: null
-  # misc
   tqdm_interval_sec: 1.0
-  save_video: False
+  save_video: True
 
 logging:
   group: ${exp_name}
@@ -139,16 +138,16 @@ logging:
   resume: true
   tags:
   - train_diffusion_unet_hybrid
-  - adroit
+  - dexdeform
 
 checkpoint:
-  save_ckpt: False
+  save_ckpt: False # if True, save checkpoint every checkpoint_every
   topk:
     monitor_key: test_mean_score
     mode: max
-    k: 1
+    k: 0
     format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
-  save_last_ckpt: True
+  save_last_ckpt: True # this only saves when save_ckpt is True
   save_last_snapshot: False
 
 multi_run:
