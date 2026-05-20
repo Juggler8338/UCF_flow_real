@@ -1,4 +1,4 @@
-name: block
+name: pour 
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -11,7 +11,7 @@ shape_meta: &shape_meta
       type: low_dim
   action:
     shape: [7]
-
+  
 
 dataset:
   _target_: diffusion_policy_3d.dataset.gr1_dex_dataset_3d.GR1DexDataset3D

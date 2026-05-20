@@ -10,7 +10,7 @@ from diffusion_policy_3d.dataset.base_dataset import BaseDataset
 import diffusion_policy_3d.model.vision_3d.point_process as point_process
 from termcolor import cprint
 
-class GR1DexDataset3D(BaseDataset):
+class Ur5Dataset3D(BaseDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
@@ -23,7 +23,7 @@ class GR1DexDataset3D(BaseDataset):
             num_points=4096,
             ):
         super().__init__()
-        cprint(f'Loading GR1DexDataset from {zarr_path}', 'green')
+        cprint(f'Loading Ur5Dataset from {zarr_path}', 'green')
         self.task_name = task_name
 
         self.num_points = num_points

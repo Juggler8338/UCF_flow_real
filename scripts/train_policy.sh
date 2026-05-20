@@ -3,7 +3,7 @@
 #   bash scripts/train_policy.sh idp3 gr1_dex-3d 0913_example
 #   bash scripts/train_policy.sh dp_224x224_r3m gr1_dex-image 0913_example
 
-dataset_path=/usr1/home/s125mdg55_01/OCFPolicy_real/block.zarr
+dataset_path=/usr1/home/s125mdg55_01/OCFPolicy_real/ur5_pick1_dataset.zarr
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 

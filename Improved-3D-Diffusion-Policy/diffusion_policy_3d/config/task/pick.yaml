@@ -1,4 +1,4 @@
-name: block
+name: pick
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -15,7 +15,7 @@ shape_meta: &shape_meta
 
 dataset:
   _target_: diffusion_policy_3d.dataset.gr1_dex_dataset_3d.GR1DexDataset3D
-  zarr_path: data/block_zarr
+  zarr_path: data/pick_zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}

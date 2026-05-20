@@ -9,9 +9,8 @@ from diffusion_policy_3d.model.common.normalizer import LinearNormalizer, Single
 from diffusion_policy_3d.dataset.base_dataset import BaseDataset
 import diffusion_policy_3d.model.vision_3d.point_process as point_process
 from termcolor import cprint
-from scipy.ndimage import zoom
 
-class GR1DexDatasetImage(BaseDataset):
+class UnitreeDataset3D(BaseDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
@@ -21,25 +20,23 @@ class GR1DexDatasetImage(BaseDataset):
             val_ratio=0.0,
             max_train_episodes=None,
             task_name=None,
-            use_img=True,
-            use_depth=False,
+            num_points=4096,
             ):
         super().__init__()
-        cprint(f'Loading GR1DexDataset from {zarr_path}', 'green')
+        cprint(f'Loading UnitreeDataset from {zarr_path}', 'green')
         self.task_name = task_name
-        self.use_img = use_img
-        self.use_depth = use_depth
+
+        self.num_points = num_points
 
 
         buffer_keys = [
             'state', 
             'action',]
         
-        if self.use_img:
-            buffer_keys.append('img')
-        if self.use_depth:
-            buffer_keys.append('depth')
+        buffer_keys.append('point_cloud')
 
+
+            
         self.replay_buffer = ReplayBuffer.copy_from_path(
             zarr_path, keys=buffer_keys)
         
@@ -79,11 +76,8 @@ class GR1DexDatasetImage(BaseDataset):
         data = {'action': self.replay_buffer['action']}
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
-        if self.use_img:
-            normalizer['image'] = SingleFieldLinearNormalizer.create_identity()
-        if self.use_depth:
-            normalizer['depth'] = SingleFieldLinearNormalizer.create_identity()
-        
+
+        normalizer['point_cloud'] = SingleFieldLinearNormalizer.create_identity()
         normalizer['agent_pos'] = SingleFieldLinearNormalizer.create_identity()
         
         return normalizer
@@ -93,22 +87,15 @@ class GR1DexDatasetImage(BaseDataset):
 
     def _sample_to_data(self, sample):
         agent_pos = sample['state'][:,].astype(np.float32)
-       
-        if self.use_img:
-            image = sample['img'][:,].astype(np.float32)
-        if self.use_depth:
-            depth = sample['depth'][:,].astype(np.float32)
-            
+        point_cloud = sample['point_cloud'][:,].astype(np.float32)
+        point_cloud = point_process.uniform_sampling_numpy(point_cloud, self.num_points)
         data = {
             'obs': {
                 'agent_pos': agent_pos,
+                'point_cloud': point_cloud,
                 },
             'action': sample['action'].astype(np.float32)}
-        if self.use_img:
-            data['obs']['image'] = image
-        if self.use_depth:
-            data['obs']['depth'] = depth
-            
+           
         return data
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
