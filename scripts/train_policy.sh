@@ -3,7 +3,7 @@
 #   bash scripts/train_policy.sh idp3 gr1_dex-3d 0913_example
 #   bash scripts/train_policy.sh dp_224x224_r3m gr1_dex-image 0913_example
 
-dataset_path=/usr1/home/s125mdg55_01/OCFPolicy_real/lift.zarr
+dataset_path=/usr1/home/s125mdg55_01/OCFPolicy_real/block.zarr
 
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
@@ -19,7 +19,7 @@ seed=0
 exp_name=${task_name}-${alg_name}-${addition_info}
 run_dir="data/outputs/${exp_name}_seed${seed}"
 
-gpu_id=0
+gpu_id=1
 echo -e "\033[33mgpu id (to use): ${gpu_id}\033[0m"
 
 
