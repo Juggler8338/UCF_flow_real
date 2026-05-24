@@ -13,4 +13,4 @@ deploy_dir/
 deploy_vis_dir/
 ablation_data/
 
-training_data_example/
+data/

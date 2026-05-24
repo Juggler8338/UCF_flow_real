@@ -58,7 +58,6 @@ class Logger:
 
 log = Logger()
 
-# [新增内容] 放在 RealSenseCamera 类的原位置或其下方
 class L515PointCloudCamera:
     def __init__(self, serial="f1420840", width=640, height=480, fps=30, filter_magnitude=2, target_points=4096):
         self.serial = serial
@@ -143,33 +142,18 @@ class L515PointCloudCamera:
                 pass
 
 class MyGripper:
-    def __init__(self, ip_address='192.168.1.11', port=502, threshold=0.001, lock_duration=2.0):
+    def __init__(self, ip_address='192.168.1.11', port=502):
         self.ip_address = ip_address
         self.port = port
         self.client = None
         self.lock = threading.Lock()
         
-        # Trigger-and-lock control (solves unstable predictions)
-        self.current_state = None  # Tracks: 'open' or 'closed'
-        self.state_threshold = threshold  # Threshold on physical [0,1] values
-        self.lock_duration = lock_duration  # Seconds to lock after triggering CLOSED
-        self.lock_until_time = 0.0  # Time until which gripper is locked
-        
-        self.open_hw_position = 0    # Hardware: 0 = OPEN
-        self.closed_hw_position = 255  # Hardware: 255 = CLOSED
-        
-        # Legacy tracking (kept for compatibility)
-        self.last_target_pos = -1
         self.current_normalized_pos = 0.0
 
         self.connect()
         self.activate_gripper()
         
-        # Log configuration
-        log.info(f"Gripper trigger-and-lock control:")
-        log.info(f"  Threshold: {self.state_threshold}")
-        log.info(f"  Lock duration: {self.lock_duration}s after CLOSED trigger")
-        log.info(f"  → Once value > {self.state_threshold}, close and lock for {self.lock_duration}s")
+        log.info("Gripper control updated: Continuous 0-1 to 0-255 mapping enabled.")
 
     def connect(self):
         try:
@@ -194,106 +178,39 @@ class MyGripper:
             log.warn(f"Gripper activation failed: {e}")
 
     def move(self, value: float):
-        """Move gripper with trigger-and-lock control (solves unstable predictions).
-        
-        Args:
-            value: Target position (physical convention, [0, 1] range)
-                   0.0 = OPEN (ready to grasp)
-                   1.0 = CLOSED (grasping)
-        
-        Trigger-and-Lock Strategy:
-            1. Detect trigger: value > threshold → send CLOSED command
-            2. Lock for N seconds: ignore all gripper commands during lock
-            3. After lock expires: can respond to new commands
-        
-        This handles unstable predictions by:
-        - Immediately responding to grasp signal (value > threshold)
-        - Holding the grasp regardless of subsequent value changes
-        - Only allowing open after sufficient time has passed
-        
-        Example (threshold=0.001, lock_duration=2.0s):
-            t=0.0s: value=0.000 → OPEN (initial)
-            t=1.0s: value=0.009 → CLOSED (triggered! lock until t=3.0s)
-            t=1.1s: value=0.000 → ignored (locked)
-            t=1.5s: value=0.080 → ignored (locked)
-            t=2.0s: value=0.001 → ignored (locked)
-            t=3.1s: value=0.000 → OPEN (lock expired, can respond)
-        
-        Hardware mapping:
-            hardware=0 → gripper OPEN
-            hardware=255 → gripper CLOSED
-        """
+        # 确保网络输出值被限制在 0.0 到 1.0 之间
         val_clamped = max(0.0, min(1.0, value))
-        current_time = time.time()
         
-        # Check if gripper is locked
-        if current_time < self.lock_until_time:
-            # Still locked, ignore command
-            return  # Silently ignore (no log spam)
-        
-        # Not locked, can respond to commands
-        
-        # Initialize on first call
-        if self.current_state is None:
-            # Start in OPEN state
-            self.current_state = 'open'
-            hw_position = self.open_hw_position
-            self.current_normalized_pos = 0.0
-            self._send_cmd(hw_position)
-            self.last_target_pos = hw_position
-            log.info(f"Gripper initialized: OPEN")
-            return
-        
-        # Determine desired state
-        if val_clamped > self.state_threshold:
-            desired_state = 'closed'
-        else:
-            desired_state = 'open'
-        
-        # Only act if state changes
-        if desired_state != self.current_state:
-            if desired_state == 'closed':
-                # Trigger CLOSED
-                hw_position = self.closed_hw_position
-                self.current_normalized_pos = 1.0
-                self._send_cmd(hw_position)
-                self.current_state = 'closed'
-                self.last_target_pos = hw_position
-                
-                # Lock for specified duration
-                self.lock_until_time = current_time + self.lock_duration
-                log.info(f"Gripper: OPEN -> CLOSED (value={val_clamped:.3f})")
-                log.success(f"   Locked for {self.lock_duration}s (until {time.strftime('%H:%M:%S', time.localtime(self.lock_until_time))})")
-            else:
-                # CLOSED → OPEN (only happens after lock expires)
-                hw_position = self.open_hw_position
-                self.current_normalized_pos = 0.0
-                self._send_cmd(hw_position)
-                self.current_state = 'open'
-                self.last_target_pos = hw_position
-                log.info(f"Gripper: CLOSED -> OPEN (value={val_clamped:.3f})")
-                log.success(f"   Command sent (hw={hw_position})")
-        # else: same state, no action needed
+        # 仅在目标位置发生变化时发送指令，避免无意义的通信开销
+        if val_clamped != self.current_normalized_pos:
+            self.current_normalized_pos = val_clamped
+            self._send_cmd(val_clamped)
 
-    def _send_cmd(self, position_int):
+    def _send_cmd(self, position):
         try:
-            cmd = [0x0900, position_int, 0x6464, 0, 0, 0, 0, 1]
+            # 将 0.0-1.0 映射到 0-255 以实现硬件的连续位置控制，并转换为整数
+            hw_position = int(round(position * 255.0))
+            
+            # 确保数值绝对安全地落在硬件支持的 0-255 范围内
+            hw_position = max(0, min(255, hw_position))
+            
+            cmd = [0x0900, hw_position, 0x6464, 0, 0, 0, 0, 1]
             self.client.write_registers(0, cmd)
         except Exception as e:
             log.warn(f"Gripper command failed: {e}, attempting reconnect...")
             try:
                 self.connect()
-                # Retry command after reconnect
+                # 重连后重试指令
                 self.client.write_registers(0, cmd)
             except Exception as e2:
                 log.error(f"Gripper command failed after reconnect: {e2}")
 
     def get_current_position(self) -> float:
-        return self.current_normalized_pos * 255.0
+        # 直接返回 [0, 1] 范围的值给网络
+        return self.current_normalized_pos
 
 class URRobot:
-    def __init__(self, robot_ip: str = "192.168.1.2", no_gripper: bool = False, gripper_ip: str = "192.168.1.11", 
-                 gripper_threshold: float = 0.001, gripper_lock_duration: float = 2.0):
+    def __init__(self, robot_ip: str = "192.168.1.2", no_gripper: bool = False, gripper_ip: str = "192.168.1.11"):
         import rtde_control
         import rtde_receive
 
@@ -312,9 +229,9 @@ class URRobot:
         self._use_gripper = not no_gripper
         if self._use_gripper:
             try:
-                self.gripper = MyGripper(ip_address=gripper_ip, threshold=gripper_threshold, 
-                                        lock_duration=gripper_lock_duration)
-                log.success(f"Gripper trigger-and-lock enabled (threshold={gripper_threshold}, lock={gripper_lock_duration}s)")
+                # 只需传入 IP 地址，去除之前多余的 threshold 和 lock_duration 参数
+                self.gripper = MyGripper(ip_address=gripper_ip)
+                log.success("Gripper connected successfully (Continuous Control).")
             except Exception as e:
                 log.error(f"Gripper connection failed: {e}")
                 self._use_gripper = False
@@ -506,6 +423,23 @@ def main(cfg: OmegaConf):
     # 1. 载入 Policy
     cls = hydra.utils.get_class(cfg._target_)
     workspace: BaseWorkspace = cls(cfg)
+    
+    # Hydra 会自动把当前运行目录切换到你的 hydra.run.dir
+    # 所以直接在当前目录找 checkpoints 文件夹即可
+    import os
+    ckpt_path = os.path.join(os.getcwd(), "checkpoints", "latest.ckpt")
+    
+    if not os.path.exists(ckpt_path):
+        raise FileNotFoundError(f"\n找不到权重文件，请检查路径是否正确: {ckpt_path}\n"
+                                f"当前 Hydra 运行目录是: {os.getcwd()}")
+        
+    print(f"\n[INFO] 正在从 {ckpt_path} 加载预训练权重...\n")
+    
+    # 读取 .ckpt 文件
+    payload = torch.load(ckpt_path, map_location=device,weights_only=False)
+    # 将网络参数和 Normalizer 的最大最小值注入到 workspace 中
+    workspace.load_payload(payload, exclude_keys=None, include_keys=None)
+
     policy = workspace.get_model().to(device)
     policy.eval()
     
@@ -518,13 +452,13 @@ def main(cfg: OmegaConf):
         action_horizon=action_horizon, 
         device=device,
         num_points=4096,
-        frequency=10.0 # 根据你训练时的频率修改
+        frequency=30.0 # 根据你训练时的频率修改
     )
 
     obs_dict = env.reset(confirm=True)
 
     # 3. 部署参数
-    roll_out_length = 300 
+    roll_out_length = 900 
     step_count = 0
     record_data = True
     
@@ -535,7 +469,6 @@ def main(cfg: OmegaConf):
         with torch.no_grad():
             # 这里的输入 obs_dict (物理数值)，经过 policy 内部通常会自动 normalize
             # 预测出的 action 通常会自动 unnormalize 变回物理数值
-            # 如果你的 DP3 实现不会自动 Normalization，则需要在这里手动添加归一化/反归一化代码
             action = policy(obs_dict)[0]
             action_list = [act.cpu().numpy() for act in action]
         
